@@ -1,0 +1,390 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#define MAX_USERS 100
+#define MAX_CHANNELS 100
+#define TOP_CHANNELS 25
+#define USER_FILE "users.txt"
+#define CHANNEL_FILE "channels.txt"
+
+typedef struct {
+    char name[50];
+    char password[50];
+    int logged_in;
+    int subscribed_channels[MAX_CHANNELS];
+} User;
+
+typedef struct {
+    char name[50];
+    int rating;
+    int rating_count;
+} Channel;
+
+User users[MAX_USERS];
+Channel channels[MAX_CHANNELS];
+int user_count = 0, channel_count = 0;
+
+// ANSI colors
+const char *colors[] = {
+    "\033[0;31m", "\033[0;32m", "\033[0;33m", "\033[0;34m",
+    "\033[0;35m", "\033[0;36m", "\033[1;37m"
+};
+#define RESET_COLOR "\033[0m"
+
+const char* random_color() {
+    return colors[rand() % (sizeof(colors) / sizeof(colors[0]))];
+}
+
+void print_colored(const char *text, int color_index) {
+    printf("%s%s%s", colors[color_index], text, RESET_COLOR);
+}
+
+void sterge_ecran() {
+    system("cls");  // pentru Windows
+    // Dacă folosești Linux/macOS, înlocuiește cu:
+    // system("clear");
+}
+
+void load_users() {
+    FILE *file = fopen(USER_FILE, "r");
+    if (!file) return;
+
+    char line[1024];
+    fgets(line, sizeof(line), file);
+    user_count = atoi(line);
+    if (user_count > MAX_USERS) user_count = MAX_USERS;
+
+    for (int i = 0; i < user_count; i++) {
+        fgets(users[i].name, 50, file);
+        users[i].name[strcspn(users[i].name, "\n")] = 0;
+
+        fgets(users[i].password, 50, file);
+        users[i].password[strcspn(users[i].password, "\n")] = 0;
+
+        fgets(line, sizeof(line), file);
+        users[i].logged_in = atoi(line);
+
+        fgets(line, sizeof(line), file);
+        int sub_count = atoi(line);
+
+        memset(users[i].subscribed_channels, 0, sizeof(users[i].subscribed_channels));
+        for (int j = 0; j < sub_count; j++) {
+            fgets(line, sizeof(line), file);
+            int idx = atoi(line);
+            if (idx >= 0 && idx < MAX_CHANNELS) {
+                users[i].subscribed_channels[idx] = 1;
+            }
+        }
+    }
+    fclose(file);
+}
+
+void save_users() {
+    FILE *file = fopen(USER_FILE, "w");
+    if (!file) {
+        perror("Eroare la deschiderea fisierului users.txt");
+        return;
+    }
+
+    fprintf(file, "%d\n", user_count);
+    for (int i = 0; i < user_count; i++) {
+        fprintf(file, "%s\n%s\n%d\n", users[i].name, users[i].password, users[i].logged_in);
+        int sub_count = 0;
+        for (int j = 0; j < MAX_CHANNELS; j++) {
+            if (users[i].subscribed_channels[j]) sub_count++;
+        }
+        fprintf(file, "%d\n", sub_count);
+        for (int j = 0; j < MAX_CHANNELS; j++) {
+            if (users[i].subscribed_channels[j]) {
+                fprintf(file, "%d\n", j);
+            }
+        }
+    }
+    fclose(file);
+}
+
+void load_channels() {
+    FILE *file = fopen(CHANNEL_FILE, "r");
+    if (!file) return;
+
+    char line[1024];
+    fgets(line, sizeof(line), file);
+    channel_count = atoi(line);
+    if (channel_count > MAX_CHANNELS) channel_count = MAX_CHANNELS;
+
+    for (int i = 0; i < channel_count; i++) {
+        fgets(channels[i].name, 50, file);
+        channels[i].name[strcspn(channels[i].name, "\n")] = 0;
+
+        fgets(line, sizeof(line), file);
+        channels[i].rating = atoi(line);
+
+        fgets(line, sizeof(line), file);
+        channels[i].rating_count = atoi(line);
+    }
+    fclose(file);
+}
+
+void save_channels() {
+    FILE *file = fopen(CHANNEL_FILE, "w");
+    if (!file) return;
+
+    fprintf(file, "%d\n", channel_count);
+    for (int i = 0; i < channel_count; i++) {
+        fprintf(file, "%s\n%d\n%d\n", channels[i].name, channels[i].rating, channels[i].rating_count);
+    }
+    fclose(file);
+}
+
+void register_user() {
+    if (user_count >= MAX_USERS) {
+        printf("User limit reached.\n");
+        return;
+    }
+    printf("Enter username: ");
+    scanf("%s", users[user_count].name);
+    printf("Enter password: ");
+    scanf("%s", users[user_count].password);
+    users[user_count].logged_in = 0;
+    memset(users[user_count].subscribed_channels, 0, sizeof(users[user_count].subscribed_channels));
+    user_count++;
+    save_users();
+    print_colored("User registered: ", 2);
+    print_colored(users[user_count - 1].name, 3);
+    printf("\n");
+}
+
+int login_user() {
+    char name[50], password[50];
+    printf("Enter username: ");
+    scanf("%s", name);
+    printf("Enter password: ");
+    scanf("%s", password);
+    for (int i = 0; i < user_count; i++) {
+        if (strcmp(users[i].name, name) == 0 && strcmp(users[i].password, password) == 0) {
+            users[i].logged_in = 1;
+            save_users();
+            print_colored("Welcome, ", 4);
+            print_colored(users[i].name, 5);
+            printf("!\n");
+            return i;
+        }
+    }
+    printf("Invalid credentials.\n");
+    return -1;
+}
+
+void logout_user(int user_index) {
+    if (user_index >= 0) {
+        users[user_index].logged_in = 0;
+        save_users();
+        print_colored("User logged out: ", 2);
+        print_colored(users[user_index].name, 3);
+        printf("\n");
+    }
+}
+
+void search_channel() {
+    char name[50];
+    printf("Enter channel name to search: ");
+    scanf("%s", name);
+    for (int i = 0; i < channel_count; i++) {
+        if (strcmp(channels[i].name, name) == 0) {
+            float avg = (float)channels[i].rating / channels[i].rating_count;
+            printf("Channel found: ");
+            print_colored(channels[i].name, 1);
+            printf(" - Rating: %.2f\n", avg);
+            return;
+        }
+    }
+    printf("Channel not found.\n");
+}
+
+void subscribe_channel(int user_index) {
+    if (user_index < 0) {
+        printf("You must be logged in to subscribe.\n");
+        return;
+    }
+    char name[50];
+    printf("Enter channel name to subscribe: ");
+    scanf("%s", name);
+    for (int i = 0; i < channel_count; i++) {
+        if (strcmp(channels[i].name, name) == 0) {
+            if (users[user_index].subscribed_channels[i]) {
+                print_colored("Already subscribed to ", 6);
+                print_colored(name, 5);
+                printf(".\n");
+                return;
+            }
+            users[user_index].subscribed_channels[i] = 1;
+            save_users();
+            print_colored("Subscribed to ", 2);
+            print_colored(name, 3);
+            printf(".\n");
+            return;
+        }
+    }
+    printf("Channel not found.\n");
+}
+
+void unsubscribe_channel(int user_index) {
+    if (user_index < 0) {
+        printf("You must be logged in to unsubscribe.\n");
+        return;
+    }
+    char name[50];
+    printf("Enter channel name to unsubscribe: ");
+    scanf("%s", name);
+    for (int i = 0; i < channel_count; i++) {
+        if (strcmp(channels[i].name, name) == 0) {
+            if (!users[user_index].subscribed_channels[i]) {
+                print_colored("You are not subscribed to ", 6);
+                print_colored(name, 5);
+                printf(".\n");
+                return;
+            }
+            users[user_index].subscribed_channels[i] = 0;
+            save_users();
+            print_colored("Unsubscribed from ", 2);
+            print_colored(name, 3);
+            printf(".\n");
+            return;
+        }
+    }
+    printf("Channel not found.\n");
+}
+
+void rate_channel(int user_index) {
+    if (user_index < 0) {
+        printf("You must be logged in to rate.\n");
+        return;
+    }
+    char name[50];
+    int rating;
+    printf("Enter channel name: ");
+    scanf("%s", name);
+    printf("Enter rating (1-5): ");
+    scanf("%d", &rating);
+    if (rating < 1 || rating > 5) {
+        printf("Invalid rating.\n");
+        return;
+    }
+    for (int i = 0; i < channel_count; i++) {
+        if (strcmp(channels[i].name, name) == 0) {
+            channels[i].rating += rating;
+            channels[i].rating_count++;
+            save_channels();
+            print_colored("Rated ", 2);
+            print_colored(name, 5);
+            printf(" with %d stars.\n", rating);
+            return;
+        }
+    }
+    printf("Channel not found.\n");
+}
+
+int compare_channels(const void *a, const void *b) {
+    Channel *ch1 = (Channel *)a;
+    Channel *ch2 = (Channel *)b;
+    float avg1 = ch1->rating_count ? (float)ch1->rating / ch1->rating_count : 0;
+    float avg2 = ch2->rating_count ? (float)ch2->rating / ch2->rating_count : 0;
+    return (avg2 > avg1) - (avg2 < avg1);
+}
+
+void top_channels() {
+    Channel sorted[MAX_CHANNELS];
+    memcpy(sorted, channels, sizeof(channels));
+    qsort(sorted, channel_count, sizeof(Channel), compare_channels);
+
+    print_colored("Top channels:\n", 6);
+    for (int i = 0; i < channel_count && i < TOP_CHANNELS; i++) {
+        float avg = sorted[i].rating_count ? (float)sorted[i].rating / sorted[i].rating_count : 0;
+        printf("%d. ", i + 1);
+        print_colored(sorted[i].name, 1);
+        printf(" - Rating: %.2f\n", avg);
+    }
+}
+
+int main() {
+    srand(time(NULL));
+
+    load_users();
+    load_channels();
+    if (channel_count == 0) {
+        char *names[] = {"TechTalk", "DailyVlogs", "GamingZone", "NewsToday", "HistoryHub",
+                         "MusicMania", "FitnessLife", "ScienceNow", "MovieReviews", "CodingWorld"};
+        int ratings[] = {45, 32, 50, 25, 40, 35, 28, 48, 38, 55};
+        int counts[] = {10, 8, 10, 5, 10, 7, 6, 12, 9, 11};
+
+        channel_count = 10;
+        for (int i = 0; i < 10; i++) {
+            strcpy(channels[i].name, names[i]);
+            channels[i].rating = ratings[i];
+            channels[i].rating_count = counts[i];
+        }
+        save_channels();
+    }
+
+    int option, user_index = -1;
+    do {
+        printf("\n");
+        print_colored("=== MAIN MENU ===\n", 6);
+        print_colored("1. Register\n", 0);
+        print_colored("2. Login\n", 1);
+        print_colored("3. Logout\n", 2);
+        print_colored("4. Search channel\n", 3);
+        print_colored("5. Subscribe\n", 4);
+        print_colored("6. Unsubscribe\n", 5);
+        print_colored("7. Rate\n", 6);
+        print_colored("8. Top channels\n", 2);
+        print_colored("9. Exit\n", 3);
+        print_colored("Choose an option: ", 1);
+        scanf("%d", &option);
+        switch (option) {
+            case 1:
+                sterge_ecran();
+                register_user();
+                break;
+            case 2:
+                sterge_ecran();
+                user_index = login_user();
+                break;
+            case 3:
+                sterge_ecran();
+                logout_user(user_index);
+                user_index = -1;
+                break;
+            case 4:
+                sterge_ecran();
+                search_channel();
+                break;
+            case 5:
+                sterge_ecran();
+                subscribe_channel(user_index);
+                break;
+            case 6:
+                sterge_ecran();
+                unsubscribe_channel(user_index);
+                break;
+            case 7:
+                sterge_ecran();
+                rate_channel(user_index);
+                break;
+            case 8:
+                sterge_ecran();
+                top_channels();
+                break;
+            case 9:
+                sterge_ecran();
+                print_colored("Goodbye!\n", 5);
+                break;
+            default:
+                sterge_ecran();
+                printf("Invalid option.\n");
+        }
+    } while (option != 9);
+
+    return 0;
+}
